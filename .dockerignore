@@ -1,0 +1,5 @@
+venv/
+__pycache__/
+.git/
+drug_database.csv
+massive_drug_list.csv

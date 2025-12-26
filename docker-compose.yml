@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    build: ./medscript-ui
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./medscript-ui:/app
+      - /app/node_modules
+    stdin_open: true
+    tty: true

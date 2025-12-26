@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Node/React
+node_modules/
+build/
+.DS_Store
+
+# User Data (Optional - Keep database, ignore large temp files)
+massive_drug_list.csv

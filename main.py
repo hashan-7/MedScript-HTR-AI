@@ -1,17 +1,18 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
-from PIL import Image
-from rapidfuzz import process, fuzz
-import pandas as pd
-import numpy as np
-import cv2
+from PIL import Image, ImageOps
+import torch
 import io
+import pandas as pd
+from rapidfuzz import process, fuzz
+import cv2
+import numpy as np
 import re
-import os
 
-app = FastAPI(title="MedScript HTR Final API")
+app = FastAPI()
 
+# --- CORS Settings ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,131 +21,152 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 1. SETUP & DATABASE LOADING ---
-print("Initializing System...")
+print("Loading Model... Please wait.")
+processor = TrOCRProcessor.from_pretrained('microsoft/trocr-base-handwritten')
+model = VisionEncoderDecoderModel.from_pretrained('microsoft/trocr-base-handwritten')
+print("Model Loaded Successfully!")
 
-DRUG_LIST = []
-
+# --- Load Database ---
 try:
-    if os.path.exists('drug_database.csv'):
-        # Load the large database
-        print("Loading drug database... this might take a moment.")
-        drug_df = pd.read_csv('drug_database.csv')
-        
-        # Ensure data is string type and remove empty values
-        brands = drug_df['PROPRIETARYNAME'].dropna().astype(str).tolist()
-        generics = drug_df['NONPROPRIETARYNAME'].dropna().astype(str).tolist()
-        
-        # Combine and remove duplicates for the search pool
-        DRUG_LIST = list(set(brands + generics))
-        print(f"Database Loaded Successfully: {len(DRUG_LIST)} unique entries.")
-    else:
-        print("Warning: 'drug_database.csv' not found. System will rely on manual list.")
-        DRUG_LIST = ["Microdon DT", "Espra", "Deriva MS", "Panadol", "Amoxicillin"] # Fallback
+    df = pd.read_csv("drug_database.csv")
+    drug_list = df.iloc[:, 0].astype(str).tolist()
+    print(f"Loaded {len(drug_list)} drugs from database.")
 except Exception as e:
-    print(f"Database Error: {e}")
-    DRUG_LIST = []
+    print(f"Error loading database: {e}")
+    drug_list = []
 
-# Load AI Model
-try:
-    processor = TrOCRProcessor.from_pretrained('microsoft/trocr-base-handwritten')
-    model = VisionEncoderDecoderModel.from_pretrained('microsoft/trocr-base-handwritten')
-    print("AI Model Ready!")
-except Exception as e:
-    print(f"Model Error: {e}")
+# --- IGNORED WORDS LIST (Expanded for common OCR errors) ---
+IGNORED_WORDS = [
+    "nocte", "nocto", "bd", "bid", "tds", "tid", "od", "sos", "stat", 
+    "mg", "ml", "g", "kg", "mcg", "tab", "cap", "capsule", "tablet",
+    "face", "gel", "cream", "oint", "ointment", "drops", "syrup",
+    "before", "after", "food", "meals", "daily", "days", "months",
+    "date", "age", "sex", "name", "dr", "rx", "signature"
+]
 
-# --- 2. CORE LOGIC ---
-
-def clean_and_match(raw_text):
-    """
-    Cleans OCR text and applies fuzzy matching against the loaded drug list.
-    """
-    # Basic cleanup
-    text = raw_text.replace('</s>', '').replace('s>', '')
-    text = re.sub(r'[^a-zA-Z0-9\s]', ' ', text)
-    
-    # Manual Correction Dictionary (for very hard to read handwriting)
-    corrections = {
-        "macradon": "Microdon DT",
-        "mecrodon": "Microdon DT",
-        "macnahon": "Microdon DT",
-        "megadote": "mg"
-    }
-    
-    lower_raw = text.lower()
-    for wrong, right in corrections.items():
-        if wrong in lower_raw:
-            return right, [{"name": right, "score": 95.0}]
-
-    # Filter noise words
-    noise_words = [
-        'mg', 'mgs', 'ml', 'tablet', 'capsule', 'tabs', 
-        'nocte', 'daily', 'bd', 'tds', 'dr',
-        'waste', 'face', 'taste', 'get', 'of', 'negricte'
-    ]
-    
-    words = text.split()
-    filtered = [
-        w for w in words 
-        if (len(w) > 2 and w.lower() not in noise_words) 
-        or w.upper() in ['DT', 'SR', 'XR', 'MS', 'DS', 'LA']
-    ]
-    
-    clean_query = " ".join(filtered).strip()
-    
-    if not clean_query:
-        return None, []
-
-    # Fuzzy Matching against the 24k+ list
-    # limit=5 gets top 5 matches
-    matches = process.extract(clean_query, DRUG_LIST, scorer=fuzz.token_set_ratio, limit=5)
-    suggestions = [{"name": m[0], "score": round(m[1], 2)} for m in matches]
-    
-    return clean_query, suggestions
-
-def segment_lines_from_bytes(image_bytes):
+# --- SEGMENTATION LOGIC ---
+def segment_lines(image_bytes):
     nparr = np.frombuffer(image_bytes, np.uint8)
-    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    # Kernel (40, 2) ensures lines don't merge vertically
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 2)) 
+    dilate = cv2.dilate(thresh, kernel, iterations=1)
     
-    # Dilation kernel to connect letters
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (80, 1))
-    dilated = cv2.dilate(thresh, kernel, iterations=1)
+    cnts = cv2.findContours(dilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+
+    # Sort contours top to bottom
+    boundingBoxes = [cv2.boundingRect(c) for c in cnts]
+    if len(cnts) > 0:
+        (cnts, boundingBoxes) = zip(*sorted(zip(cnts, boundingBoxes), key=lambda b:b[1][1]))
+
+    line_images = []
     
-    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    bounding_boxes = [cv2.boundingRect(c) for c in contours]
-    (contours, bounding_boxes) = zip(*sorted(zip(contours, bounding_boxes), key=lambda b: b[1][1]))
+    for c in cnts:
+        x, y, w, h = cv2.boundingRect(c)
+        # Filter small noise
+        if h > 20 and w > 50:
+            roi = img[y:y+h, x:x+w] 
+            pil_img = Image.fromarray(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))
+            # Add padding for better OCR accuracy
+            padded_img = ImageOps.expand(pil_img, border=20, fill='white')
+            line_images.append(padded_img)
+
+    return line_images
+
+# --- NEW: ADVANCED MATCHING FUNCTION ---
+def find_best_drug_match(text, drug_db):
+    # 1. Cleaning: Lowercase and remove numbers (prevents matching "100" to "GABA 100")
+    # We keep only letters for the matching logic
+    clean_text = text.lower()
     
-    crops = []
-    for box in bounding_boxes:
-        x, y, w, h = box
-        if w > 30 and h > 10:
-            crop = image[max(0, y-5):min(image.shape[0], y+h+5), max(0, x-5):min(image.shape[1], x+w+5)]
-            crops.append(Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)))
-            
-    return crops
+    # Remove ignored words
+    for bad_word in IGNORED_WORDS:
+        clean_text = clean_text.replace(f" {bad_word} ", " ")
+        if clean_text.endswith(f" {bad_word}"): clean_text = clean_text[:-len(bad_word)-1]
+        if clean_text.startswith(f"{bad_word} "): clean_text = clean_text[len(bad_word)+1:]
+    
+    # Remove digits completely for matching
+    text_alpha_only = re.sub(r'[^a-zA-Z\s]', '', clean_text).strip()
+    
+    if len(text_alpha_only) < 3:
+        return None, 0, "Ignored (Noise)"
+
+    # 2. Get Top 5 Candidates (Not just one)
+    # scorer=fuzz.WRatio handles partial matches well
+    matches = process.extract(text_alpha_only, drug_db, scorer=fuzz.WRatio, limit=5)
+
+    best_candidate = None
+    best_score = 0
+    status = "Not Found"
+
+    # 3. Iterate through candidates to find the first valid one
+    for name, score, idx in matches:
+        # Rule 1: First Letter Match
+        # If OCR is "Macrodon" (M) and DB is "Microdon" (M) -> Pass
+        # If OCR is "Macrodon" (M) and DB is "GABA" (G) -> Fail
+        
+        db_first_char = name.lower()[0]
+        ocr_first_char = text_alpha_only[0]
+
+        if ocr_first_char == db_first_char:
+            # If letters match, we accept a lower score (e.g., 50%)
+            if score >= 50:
+                best_candidate = name
+                best_score = score
+                status = "Found"
+                break # Found the best valid match, stop looking
+        else:
+            # If letters don't match, we need a very high score (e.g., 85%) to accept
+            # This handles cases where the first letter is read wrong (e.g., "P" vs "F")
+            if score >= 85:
+                best_candidate = name
+                best_score = score
+                status = "Found (High Conf)"
+                break
+    
+    return best_candidate, best_score, status
 
 @app.post("/predict-full")
-async def predict_full(file: UploadFile = File(...)):
-    contents = await file.read()
-    line_images = segment_lines_from_bytes(contents)
-    results = []
+async def predict(file: UploadFile = File(...)):
+    image_data = await file.read()
+    lines = segment_lines(image_data)
     
-    for i, img in enumerate(line_images):
-        pixel_values = processor(images=img, return_tensors="pt").pixel_values
+    if not lines:
+        raw_img = Image.open(io.BytesIO(image_data)).convert("RGB")
+        lines = [ImageOps.expand(raw_img, border=20, fill='white')]
+
+    results = []
+    print(f"Processing {len(lines)} lines...")
+
+    for i, line_img in enumerate(lines):
+        # OCR Prediction
+        pixel_values = processor(images=line_img, return_tensors="pt").pixel_values
         generated_ids = model.generate(pixel_values)
-        raw_text = processor.batch_decode(generated_ids, skip_special_characters=True)[0]
-        
-        cleaned, suggestions = clean_and_match(raw_text)
-        
-        if cleaned:
-            results.append({
-                "id": i,
-                "raw": raw_text,
-                "cleaned": cleaned,
-                "suggestions": suggestions
-            })
+        raw_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+        # Use the new Smart Matching Logic
+        drug_name, confidence, status = find_best_drug_match(raw_text, drug_list)
+
+        if status == "Ignored (Noise)":
+            print(f"Line {i+1} IGNORED: {raw_text}")
+            continue
             
-    return {"lines_detected": len(results), "data": results}
+        if status == "Not Found":
+             print(f"Line {i+1} NO MATCH: {raw_text}")
+        else:
+             print(f"Line {i+1}: {raw_text} -> {drug_name} ({confidence}%)")
+             
+             # Add to results
+             results.append({
+                "raw_text": raw_text,
+                "drug_name": drug_name,
+                "confidence": confidence,
+                "status": status
+             })
+
+    return results

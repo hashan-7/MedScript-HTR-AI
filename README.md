@@ -24,7 +24,7 @@ MedScript HTR is an AI-powered system designed to digitize handwritten medical p
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/YourName/MedScript-HTR-AI.git](https://github.com/YourName/MedScript-HTR-AI.git)
+    git clone [https://github.com/hashan-7/MedScript-HTR-AI.git](https://github.com/hashan-7/MedScript-HTR-AI.git)
     cd MedScript-HTR-AI
     ```
 
@@ -38,4 +38,4 @@ MedScript HTR is an AI-powered system designed to digitize handwritten medical p
     * Backend API: `http://localhost:8000/docs`
 
 ## 👨‍💻 Developer
-Developed by **[Your Name]** as a Full Stack AI Project.
+Developed by **[H7]** as a Full Stack AI Project.

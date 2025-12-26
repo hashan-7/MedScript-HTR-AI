@@ -11,3 +11,13 @@ build/
 
 # User Data (Optional - Keep database, ignore large temp files)
 massive_drug_list.csv
+
+# Ignore Test Images
+*.jpg
+*.png
+*.jpeg
+
+# Ignore Raw Data Files (Optional - if you don't want them)
+*.xls
+*.xlsx
+india_drugs.csv

@@ -1,4 +1,4 @@
-# MedScript HTR - AI Prescription Digitizer 🏥💊
+y# MedScript HTR - AI Prescription Digitizer 🏥💊
 
 MedScript HTR is an AI-powered system designed to digitize handwritten medical prescriptions. It uses **Local Deep Learning (PaddleOCR)** to recognize text and a custom **Fuzzy Logic Algorithm** to verify drug names against a pharmacy database.
 
@@ -105,8 +105,14 @@ The application will open automatically at http://localhost:3000
 
 * Example: If OCR reads "Renyer" as "Renger", the fuzzy logic identifies "Renyer" as the correct drug based on the string distance and database presence.
 
-Made by H7 
-📝 License : 
+
+## 📄 License
+
 This project is developed for educational purposes.
+---
+
+<p align="center">
+  Made with ❤️ by h7
+</p>
 
 

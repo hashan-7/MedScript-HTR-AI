@@ -106,7 +106,7 @@ The application will open automatically at http://localhost:3000
 * Example: If OCR reads "Renyer" as "Renger", the fuzzy logic identifies "Renyer" as the correct drug based on the string distance and database presence.
 
 
-## 📄 License
+#📄 License
 
 This project is developed for educational purposes.
 

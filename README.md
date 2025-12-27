@@ -1,4 +1,4 @@
-## MedScript HTR - AI Prescription Digitizer 🏥💊
+# MedScript HTR - AI Prescription Digitizer 🏥💊
 
 MedScript HTR is an AI-powered system designed to digitize handwritten medical prescriptions. It uses **Local Deep Learning (PaddleOCR)** to recognize text and a custom **Fuzzy Logic Algorithm** to verify drug names against a pharmacy database.
 
@@ -78,21 +78,21 @@ The application will open automatically at http://localhost:3000
 
 ### 📸 How to Use
 
- Launch the App: Ensure both Backend and Frontend terminals are running.
+ * **Launch the App**: Ensure both Backend and Frontend terminals are running.
 
- * Upload Image: Upload a clear image of a handwritten prescription (JPG/PNG).
+ * **Upload Image**: Upload a clear image of a handwritten prescription (JPG/PNG).
 
- * Processing: The system uses OpenCV to preprocess the image (thickening ink strokes) and PaddleOCR to read the text.
+ * **Processing**: The system uses OpenCV to preprocess the image (thickening ink strokes) and PaddleOCR to read the text.
 
- * Verification: The extracted text is automatically compared against drug_database.csv.
+ * **Verification**: The extracted text is automatically compared against drug_database.csv.
 
- * Found: High confidence match.
+ * **Found**: High confidence match.
 
- * Smart Match: Medium confidence but medically valid match.
+ * **Smart Match**: Medium confidence but medically valid match.
 
- * Not Found: The text did not match any known drug.
+ * **Not Found**: The text did not match any known drug.
 
- * Result: View the digitized list and export it if needed.
+ * **Result**: View the digitized list and export it if needed.
 
 
 ### 🧠 How It Works (Under the Hood)
@@ -106,10 +106,10 @@ The application will open automatically at http://localhost:3000
 * Example: If OCR reads "Renyer" as "Renger", the fuzzy logic identifies "Renyer" as the correct drug based on the string distance and database presence.
 
 
-# 📄 License
+### 📄 License
 
 This project is developed for educational purposes.
-
+---
 <p align="center">
   Made with ❤️ by h7
 </p>

@@ -109,6 +109,7 @@ The application will open automatically at http://localhost:3000
 ### 📄 License
 
 This project is developed for educational purposes.
+
 ---
 <p align="center">
   Made with ❤️ by h7
